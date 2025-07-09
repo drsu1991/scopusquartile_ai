@@ -1,157 +1,87 @@
 import streamlit as st
 import pandas as pd
 import pickle
-from fpdf import FPDF
-import numpy as np
-import difflib
-import re
 
-# 🎯 Load model dan encoder
-model = pickle.load(open("quartil_model_all.pkl", "rb"))
-encoder = pickle.load(open("encoder_all.pkl", "rb"))
+# ===========================
+# Load data dan model
+# ===========================
+@st.cache_data
+def load_data():
+    df = pd.read_csv("jurnal_dataset_final.csv")
+    return df
 
-# 🎯 Load dataset
-df = pd.read_csv("jurnal_dataset_final.csv")
+@st.cache_resource
+def load_model():
+    with open("quartil_model_all.pkl", "rb") as f:
+        model = pickle.load(f)
+    with open("encoder_all.pkl", "rb") as f:
+        encoder = pickle.load(f)
+    return model, encoder
 
-# 🎯 Cleaning tambahan
-df["Nama Jurnal"] = df["Nama Jurnal"].apply(lambda x: re.sub(r"\s+", " ", str(x).strip()))
-df["Nama Jurnal"] = df["Nama Jurnal"].apply(lambda x: re.sub(r"[^A-Za-z0-9\s]", "", x))
-df["Bidang Ilmu"] = df["Bidang Ilmu"].str.title()
-df["ISSN"] = df["ISSN"].astype(str).str.replace(" ", "")
+df = load_data()
+model, encoder = load_model()
 
-# 🎯 Buat singkatan canggih
-def buat_singkatan_canggih(nama):
-    stopwords = {"of", "in", "and", "the"}
-    kata = nama.split()
-    huruf = []
-    for w in kata:
-        if w.lower() in stopwords:
-            continue
-        if len(w) <= 3:
-            huruf.append(w[:2].upper())
-        else:
-            huruf.append(w[0].upper())
-    return "".join(huruf)
-
-df["Abbreviation"] = df["Nama Jurnal"].apply(buat_singkatan_canggih)
-
-# 🎯 Kolom bantu lowercase
-df["Nama Lower"] = df["Nama Jurnal"].str.lower()
-
-# 🎯 Setup halaman (icon 📈)
+# ===========================
+# Judul dan logo
+# ===========================
 st.set_page_config(
     page_title="ScopusQuartile AI",
     page_icon="📈",
     layout="centered"
 )
 
-# 🎯 Tampilkan logo SVG
-with open("logo_scopusquartile_s.svg", "r") as f:
-    svg_logo = f.read()
+col1, col2 = st.columns([0.1,0.9])
+with col1:
+    st.image("logo_scopusquartile_s.svg", width=50)
+with col2:
+    st.markdown("## **ScopusQuartile AI**\n_AI-Powered Quartile Prediction_")
 
-st.markdown(
-    f"<div style='text-align:center;'>{svg_logo}</div>",
-    unsafe_allow_html=True
-)
+# ===========================
+# Input pencarian
+# ===========================
+query = st.text_input("🔍 Ketik nama jurnal atau singkatannya")
 
-# 🎯 1 tagline di bawah logo
-# (Jika SVG sudah ada tulisan/tagline, baris ini boleh dihapus)
-# st.write("*AI-Powered Quartile Prediction*")
+# ===========================
+# Tampilkan hasil filter
+# ===========================
+if query:
+    matches = df[
+        df["Nama Jurnal"].str.contains(query, case=False, na=False) |
+        df["Singkatan"].str.contains(query, case=False, na=False)
+    ]
 
-# 🎯 Auto-complete input (default kosong)
-list_pilihan = df.apply(
-    lambda row: f"{row['Nama Jurnal']} [{row['Abbreviation']}]",
-    axis=1
-).tolist()
+    if not matches.empty:
+        # Pilih jurnal dari hasil pencarian
+        pilihan = st.selectbox(
+            "Pilih jurnal:",
+            matches.index,
+            format_func=lambda i: f"{matches.loc[i,'Nama Jurnal']} [{matches.loc[i,'Singkatan']}]"
+        )
+        
+        jurnal = matches.loc[pilihan]
+        st.success("✅ Profil Jurnal Ditemukan")
 
-nama_jurnal_pilih = st.selectbox(
-    "🔍 Pilih jurnal atau cari berdasarkan nama/singkatan",
-    options=[""] + sorted(list_pilihan),
-    index=0
-)
+        st.markdown(f"**Nama Jurnal:** {jurnal['Nama Jurnal']}")
+        st.markdown(f"**Singkatan:** {jurnal['Singkatan']}")
+        st.markdown(f"**ISSN:** {jurnal['ISSN']}")
+        st.markdown(f"**SJR:** {jurnal['SJR']}")
+        st.markdown(f"**H-Index:** {jurnal['H-Index']}")
+        st.markdown(f"**Bidang Ilmu:** {jurnal['Bidang Ilmu']}")
 
-if nama_jurnal_pilih != "":
-    # Ambil nama asli
-    nama_jurnal = nama_jurnal_pilih.split(" [")[0]
-    nama_input = nama_jurnal.strip().lower()
-
-    if nama_input in df["Nama Lower"].values:
-        jurnal = df[df["Nama Lower"] == nama_input].iloc[0]
-
-        st.success("✅ Jurnal Ditemukan")
-        st.markdown(f"""
-        **Nama Jurnal:** {jurnal['Nama Jurnal']}  
-        **Singkatan Jurnal:** {jurnal['Abbreviation']}  
-        **ISSN:** {jurnal['ISSN']}  
-        **SJR:** {jurnal['SJR']}  
-        **H-Index:** {jurnal['H-Index']}  
-        **Bidang Ilmu:** {jurnal['Bidang Ilmu']}
-        """)
-
-        # 🎯 Siapkan input fitur
-        X_num = np.array([[jurnal["SJR"], jurnal["H-Index"]]])
-        try:
-            X_cat = encoder.transform([[jurnal["Bidang Ilmu"]]])
-        except ValueError:
-            X_cat = np.zeros((1, encoder.categories_[0].shape[0]))
-
-        X_input = np.hstack((X_num, X_cat))
-
-        # 🎯 Prediksi
-        probabilities = model.predict_proba(X_input)[0]
-        classes = model.classes_
-        pred_idx = np.argmax(probabilities)
-        pred_quartil = classes[pred_idx]
-        confidence = probabilities[pred_idx]
-
-        st.subheader(f"🎯 Prediksi Quartil: {pred_quartil}")
-        st.write(f"Confidence: **{confidence*100:.1f}%**")
-
-        # 🎯 Download hasil PDF
-        if st.button("⬇️ Download Hasil PDF"):
-            pdf = FPDF()
-            pdf.add_page()
-            pdf.set_font("Arial", size=12)
-            pdf.cell(200,10,txt="Hasil Prediksi Quartil Jurnal", ln=1, align="C")
-            pdf.cell(200,10,txt=f"Nama Jurnal: {jurnal['Nama Jurnal']}", ln=2)
-            pdf.cell(200,10,txt=f"Singkatan: {jurnal['Abbreviation']}", ln=3)
-            pdf.cell(200,10,txt=f"ISSN: {jurnal['ISSN']}", ln=4)
-            pdf.cell(200,10,txt=f"SJR: {jurnal['SJR']}", ln=5)
-            pdf.cell(200,10,txt=f"H-Index: {jurnal['H-Index']}", ln=6)
-            pdf.cell(200,10,txt=f"Bidang Ilmu: {jurnal['Bidang Ilmu']}", ln=7)
-            pdf.cell(200,10,txt=f"Prediksi Quartil: {pred_quartil}", ln=8)
-            pdf.cell(200,10,txt=f"Confidence: {confidence*100:.1f}%", ln=9)
-            pdf.output("hasil_prediksi.pdf")
-
-            with open("hasil_prediksi.pdf", "rb") as file:
-                st.download_button(
-                    label="Download PDF",
-                    data=file,
-                    file_name="hasil_prediksi.pdf",
-                    mime="application/pdf"
-                )
-
+        # Prediksi Quartile
+        X_cat = encoder.transform([[jurnal["Bidang Ilmu"]]])
+        X_num = [[jurnal["SJR"], jurnal["H-Index"]]]
+        X_input = pd.DataFrame(
+            np.hstack([X_num, X_cat]),
+            columns=["SJR", "H-Index"] + list(encoder.get_feature_names_out())
+        )
+        quartil_pred = model.predict(X_input)[0]
+        st.markdown(f"🎯 **Prediksi Quartile: {quartil_pred}**")
     else:
-        st.error("❌ Nama jurnal tidak ditemukan.")
-        daftar_jurnal = df["Nama Lower"].tolist()
-        rekomendasi = difflib.get_close_matches(nama_input, daftar_jurnal, n=5, cutoff=0.5)
-        if rekomendasi:
-            st.info("🔍 Apakah maksud Anda salah satu dari berikut?")
-            for r in rekomendasi:
-                nama_asli = df[df["Nama Lower"] == r]["Nama Jurnal"].values[0]
-                st.write(f"- {nama_asli}")
-        else:
-            st.warning("Tidak ada rekomendasi nama jurnal mirip ditemukan.")
+        st.warning("⚠️ Jurnal tidak ditemukan. Cek ejaan atau coba kata kunci lain.")
+else:
+    st.info("Masukkan kata kunci jurnal di atas untuk memulai pencarian.")
 
-# 🎯 Footer
+# Footer
 st.markdown("---")
-st.markdown("""
-👤 **Pengembang Aplikasi**  
-**dr. Suhendra Mandala Ernas**  
-PPDS Patologi Klinik FK Unair – RSUD dr. Soetomo  
-
-🔗 [ORCID](https://orcid.org/0009-0007-1290-1673)  
-🔗 [LinkedIn](https://www.linkedin.com/in/drsuhendramandalaernas/)  
-
-💼 *Powered by ScopusQuartile AI*
-""")
+st.caption("Developed by dr. Suhendra Mandala Ernas | [ORCID](https://orcid.org/0009-0007-1290-1673) | [LinkedIn](https://www.linkedin.com/in/drsuhendramandalaernas/)")
