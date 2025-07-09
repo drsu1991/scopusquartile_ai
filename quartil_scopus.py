@@ -44,21 +44,30 @@ st.markdown("---")
 # ============================
 # Input Search
 # ============================
-query = st.text_input("🔍 Ketik singkatan (persis) atau sebagian nama jurnal")
+query = st.text_input("🔍 Ketik nama jurnal atau singkatannya")
 
 # ============================
-# Logic Prioritas Search
+# Logic Autosuggestion
 # ============================
 if query:
     if "Singkatan" not in df.columns:
         st.error("Dataset tidak memiliki kolom 'Singkatan'. Harap periksa CSV Anda.")
     else:
-        # Cari apakah singkatan persis match
-        exact_match = df[df["Singkatan"].str.lower() == query.lower()]
+        # Cari semua hasil match nama/singkatan
+        matches = df[
+            df["Nama Jurnal"].str.contains(query, case=False, na=False) |
+            df["Singkatan"].str.contains(query, case=False, na=False)
+        ]
 
-        if not exact_match.empty:
-            jurnal = exact_match.iloc[0]
-            st.success("✅ Ditemukan berdasarkan singkatan persis")
+        if not matches.empty:
+            pilihan = st.selectbox(
+                "Pilih jurnal dari hasil pencarian:",
+                options=matches.index,
+                format_func=lambda i: f"{matches.loc[i,'Nama Jurnal']} [{matches.loc[i,'Singkatan']}]"
+            )
+            jurnal = matches.loc[pilihan]
+
+            st.success("✅ Profil Jurnal Ditemukan")
 
             st.markdown(f"**Nama Jurnal:** {jurnal['Nama Jurnal']}")
             st.markdown(f"**Singkatan Jurnal:** {jurnal['Singkatan']}")
@@ -75,40 +84,8 @@ if query:
 
             st.markdown("---")
             st.markdown(f"🎯 **Prediksi Quartile: `{quartile_pred}`**")
-
         else:
-            # Kalau tidak ada singkatan persis, cari substring di nama jurnal
-            matches = df[
-                df["Nama Jurnal"].str.contains(query, case=False, na=False)
-            ]
-
-            if not matches.empty:
-                pilihan = st.selectbox(
-                    "Pilih jurnal dari hasil pencarian nama:",
-                    options=matches.index,
-                    format_func=lambda i: f"{matches.loc[i,'Nama Jurnal']} [{matches.loc[i,'Singkatan']}]"
-                )
-                jurnal = matches.loc[pilihan]
-
-                st.success("✅ Profil Jurnal Ditemukan")
-
-                st.markdown(f"**Nama Jurnal:** {jurnal['Nama Jurnal']}")
-                st.markdown(f"**Singkatan Jurnal:** {jurnal['Singkatan']}")
-                st.markdown(f"**ISSN:** {jurnal['ISSN']}")
-                st.markdown(f"**SJR:** {jurnal['SJR']}")
-                st.markdown(f"**H-Index:** {jurnal['H-Index']}")
-                st.markdown(f"**Bidang Ilmu:** {jurnal['Bidang Ilmu']}")
-
-                # Prediksi Quartile
-                X_cat = encoder.transform([[jurnal["Bidang Ilmu"]]])
-                X_num = [[jurnal["SJR"], jurnal["H-Index"]]]
-                X_input = np.hstack([X_num, X_cat])
-                quartile_pred = model.predict(X_input)[0]
-
-                st.markdown("---")
-                st.markdown(f"🎯 **Prediksi Quartile: `{quartile_pred}`**")
-            else:
-                st.warning("⚠️ Jurnal tidak ditemukan. Cek ejaan atau coba kata kunci lain.")
+            st.warning("⚠️ Jurnal tidak ditemukan. Cek ejaan atau coba kata kunci lain.")
 else:
     st.info("💡 Masukkan kata kunci di atas untuk memulai pencarian.")
 
