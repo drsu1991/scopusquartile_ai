@@ -1,0 +1,22 @@
+<svg width="600" height="120" xmlns="http://www.w3.org/2000/svg">
+  <!-- Background -->
+  <rect width="600" height="120" fill="#ffffff"/>
+  
+  <!-- Icon Box (lebih turun) -->
+  <rect x="20" y="40" width="50" height="50" rx="8" ry="8" fill="#007BFF"/>
+  
+  <!-- S Letter (lebih turun) -->
+  <text x="45" y="75" font-family="Arial" font-size="32" text-anchor="middle" fill="#ffffff" font-weight="bold">
+    S
+  </text>
+  
+  <!-- Title -->
+  <text x="85" y="65" font-family="Arial" font-size="26" fill="#333333" font-weight="bold">
+    ScopusQuartile AI
+  </text>
+  
+  <!-- Tagline -->
+  <text x="85" y="90" font-family="Arial" font-size="14" fill="#555555" font-style="italic">
+    AI-Powered Quartile Prediction
+  </text>
+</svg>
